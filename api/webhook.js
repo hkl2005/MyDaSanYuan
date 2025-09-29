@@ -15,17 +15,10 @@ export default async function handler(request) {
   // --- Handle POST requests from TradingView ---
   if (request.method === 'POST') {
     try {
-      // TradingView sends signals in the request body. In Vercel's Node.js runtime,
-      // this is pre-parsed and available in 'request.body'. The original .text() method
-      // is not available, which caused the error.
-      const signalMessage = request.body;
+      // TradingView sends signals as plain text in the request body
+      const signalMessage = await request.text();
 
-      // Coerce body to string. If TradingView sends JSON, it's pretty-printed.
-      const messageText = (typeof signalMessage === 'object' && signalMessage !== null)
-        ? JSON.stringify(signalMessage, null, 2)
-        : String(signalMessage || '');
-
-      if (messageText.trim() === '') {
+      if (!signalMessage || signalMessage.trim() === '') {
         return new Response('Bad Request: Empty signal message received.', { status: 400 });
       }
 
@@ -36,7 +29,7 @@ export default async function handler(request) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: CHAT_ID,
-          text: messageText,
+          text: signalMessage,
           parse_mode: 'Markdown', // Or 'HTML' if your signals use HTML tags
         }),
       });
