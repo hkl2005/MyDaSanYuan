@@ -1,59 +1,44 @@
-// Vercel Serverless Function
-// Save this as /api/webhook.js in your Vercel project
-
-export default async function handler(request) {
-  // Ensure your Environment Variables are set in Vercel project settings
-  const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-  const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-
-  // --- Basic Validation ---
-  if (!BOT_TOKEN || !CHAT_ID) {
-    console.error('Server config error: Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
-    return new Response('Server configuration error.', { status: 500 });
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // --- Handle POST requests from TradingView ---
-  if (request.method === 'POST') {
-    try {
-      // TradingView sends signals as plain text in the request body
-      const signalMessage = await request.text();
+  const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+  const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-      if (!signalMessage || signalMessage.trim() === '') {
-        return new Response('Bad Request: Empty signal message received.', { status: 400 });
-      }
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    return res.status(500).json({ error: 'Telegram config missing' });
+  }
 
-      const telegramApiUrl = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+  const body = req.body;
 
-      const apiResponse = await fetch(telegramApiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: CHAT_ID,
-          text: signalMessage,
-          parse_mode: 'Markdown', // Or 'HTML' if your signals use HTML tags
-        }),
-      });
+  // Expecting TradingView to send a JSON payload (it can be customized in the alert message)
+  const message = typeof body === 'string' ? body : JSON.stringify(body, null, 2);
 
-      if (!apiResponse.ok) {
-        const errorData = await apiResponse.json();
-        console.error('Telegram API Error:', errorData);
-        return new Response(`Failed to send message. Telegram API Error: ${errorData.description}`, { status: 502 });
-      }
-      
-      // Success
-      return new Response('Signal forwarded to Telegram successfully.', { status: 200 });
+  const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
 
-    } catch (error) {
-      console.error('Webhook processing error:', error);
-      return new Response('Internal Server Error while processing webhook.', { status: 500 });
+  try {
+    const tgRes = await fetch(telegramUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: message,
+        parse_mode: 'Markdown',
+      }),
+    });
+
+    if (!tgRes.ok) {
+      const errorText = await tgRes.text();
+      console.error('Telegram API error:', errorText);
+      return res.status(500).json({ error: 'Failed to send Telegram message' });
     }
-  }
 
-  // --- Handle GET requests for health checks ---
-  if (request.method === 'GET') {
-    return new Response(`Webhook is active. Ready to receive POST requests from TradingView.`, { status: 200 });
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
-
-  // --- Handle other methods ---
-  return new Response(`Method Not Allowed. Use POST for signals or GET for health check.`, { status: 405 });
 }
